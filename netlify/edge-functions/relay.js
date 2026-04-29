@@ -1,4 +1,4 @@
-const DEST_BASE = (Netlify.env.get("DEST") || "").replace(/\/$/, "");
+const D_BASE = (Netlify.env.get("D_DEST") || "").replace(/\/$/, "");
 
 const STRIP_HEADERS = new Set([
   "host",
@@ -17,13 +17,13 @@ const STRIP_HEADERS = new Set([
 ]);
 
 export default async function handler(request) {
-  if (!DEST_BASE) {
-    return new Response("Misconfigured: DEST is not set", { status: 500 });
+  if (!D_BASE) {
+    return new Response("Misconfigured: D_DEST is not set", { status: 500 });
   }
 
   try {
     const url = new URL(request.url);
-    const targetUrl = DEST_BASE + url.pathname + url.search;
+    const targetUrl = D_BASE + url.pathname + url.search;
 
     const headers = new Headers();
     let clientIp = null;
@@ -72,6 +72,6 @@ export default async function handler(request) {
       headers: responseHeaders,
     });
   } catch (error) {
-    return new Response("Bad Gateway: Relay Failed", { status: 502 });
+    return new Response("Dest Failed", { status: 502 });
   }
 }
