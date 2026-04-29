@@ -1,9 +1,9 @@
 {
-  "name": "my_netlify_project_us2",
-  "version": "1.0.0",
-  "description": "my_netlify_project_us2",
+  "name": "My Netlify Project 1",
+  "version": "1.0",
+  "description": "My Netlify Project 1",
   "private": true,
-  "license": "MIT",
+  "license": "Project_1_00xx00xx44556677_00x",
   "scripts": {
     "dev": "netlify dev",
     "build": "echo 'No build step required'"
