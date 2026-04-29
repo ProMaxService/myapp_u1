@@ -1,7 +1,7 @@
 {
-  "name": "my_netlify_project_us1",
+  "name": "my_netlify_project_us2",
   "version": "1.0.0",
-  "description": "my_netlify_project_us1",
+  "description": "my_netlify_project_us2",
   "private": true,
   "license": "MIT",
   "scripts": {
