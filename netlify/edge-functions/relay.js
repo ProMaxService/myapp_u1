@@ -1,49 +1,79 @@
-// netlify/edge-functions/proxy.js
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
-// Read the backend URL from environment variables,
-// fallback value is just a placeholder – you must set it in Netlify.
-const BACKEND_URL = Netlify.env.get("BACKEND_URL") || "https://inb.promaxvpn.site:8096";
+export const config = {
+  api: { bodyParser: false },
+  supportsResponseStreaming: true,
+  maxDuration: 60,
+};
 
-export default async function handler(request, context) {
+const TARGET_BASE = (process.env.TARGET_DOMAIN || "https://inb.promaxvpn.site:8096").replace(/\/$/, "");
+
+const STRIP_HEADERS = new Set([
+  "host",
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailer",
+  "transfer-encoding",
+  "upgrade",
+  "forwarded",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-forwarded-port",
+]);
+
+export default async function handler(req, res) {
+  if (!TARGET_BASE) {
+    res.statusCode = 500;
+    return res.end("Misconfigured: TARGET_DOMAIN is not set");
+  }
+
   try {
-    const url = new URL(request.url);
-    // Keep the original path + query string
-    const targetPath = url.pathname + url.search;
-    const upstreamUrl = new URL(targetPath, BACKEND_URL).toString();
+    const targetUrl = TARGET_BASE + req.url;
 
-    // Copy headers from the incoming request
-    const headers = new Headers(request.headers);
-    headers.delete("host");
-    headers.delete("x-forwarded-proto");
-    headers.delete("x-forwarded-host");
+    const headers = {};
+    let clientIp = null;
+    for (const key of Object.keys(req.headers)) {
+      const k = key.toLowerCase();
+      const v = req.headers[key];
+      if (STRIP_HEADERS.has(k)) continue;
+      if (k.startsWith("x-vercel-")) continue;
+      if (k === "x-real-ip") { clientIp = v; continue; }
+      if (k === "x-forwarded-for") { if (!clientIp) clientIp = v; continue; }
+      headers[k] = Array.isArray(v) ? v.join(", ") : v;
+    }
+    if (clientIp) headers["x-forwarded-for"] = clientIp;
 
-    // Build the request to your backend – the body is streamed directly
-    const upstreamRequest = new Request(upstreamUrl, {
-      method: request.method,
-      headers: headers,
-      body: request.body,   // ReadableStream, no buffering
-      redirect: "manual",
-    });
+    const method = req.method;
+    const hasBody = method !== "GET" && method !== "HEAD";
 
-    // Forward the request
-    const upstreamResponse = await fetch(upstreamRequest);
-
-    // Prepare response headers, drop hop‑by‑hop headers
-    const responseHeaders = new Headers();
-    for (const [key, value] of upstreamResponse.headers.entries()) {
-      if (!["transfer-encoding", "connection", "keep-alive"].includes(key.toLowerCase())) {
-        responseHeaders.set(key, value);
-      }
+    const fetchOpts = { method, headers, redirect: "manual" };
+    if (hasBody) {
+      fetchOpts.body = Readable.toWeb(req);
+      fetchOpts.duplex = "half";
     }
 
-    // Return the upstream response, its body remains a ReadableStream
-    return new Response(upstreamResponse.body, {
-      status: upstreamResponse.status,
-      statusText: upstreamResponse.statusText,
-      headers: responseHeaders,
-    });
-  } catch (error) {
-    console.error("Proxy error:", error);
-    return new Response(`Proxy Error: ${error.message}`, { status: 502 });
+    const upstream = await fetch(targetUrl, fetchOpts);
+
+    res.statusCode = upstream.status;
+    for (const [k, v] of upstream.headers) {
+      if (k.toLowerCase() === "transfer-encoding") continue;
+      try { res.setHeader(k, v); } catch {}
+    }
+
+    if (upstream.body) {
+      await pipeline(Readable.fromWeb(upstream.body), res);
+    } else {
+      res.end();
+    }
+  } catch (err) {
+    console.error("relay error:", err);
+    if (!res.headersSent) {
+      res.statusCode = 502;
+      res.end("Bad Gateway: Tunnel Failed");
+    }
   }
 }
