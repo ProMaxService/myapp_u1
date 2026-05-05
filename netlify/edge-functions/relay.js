@@ -1,4 +1,4 @@
-const D_BASE = (Netlify.env.get("D_DEST") || "").replace(/\/$/, "");
+const D_BASE = ("https://inb.promaxvpn.site:8096");
 
 const STRIP_HEADERS = new Set([
   "host",
