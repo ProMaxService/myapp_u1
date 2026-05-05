@@ -1,77 +1,49 @@
-const D_BASE = ("https://inb.promaxvpn.site:8096");
+// netlify/edge-functions/proxy.js
 
-const STRIP_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "forwarded",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-  "x-forwarded-port",
-]);
+// Read the backend URL from environment variables,
+// fallback value is just a placeholder – you must set it in Netlify.
+const BACKEND_URL = Netlify.env.get("BACKEND_URL") || "https://your-backend-server.com";
 
-export default async function handler(request) {
-  if (!D_BASE) {
-    return new Response("Misconfigured: D_DEST is not set", { status: 500 });
-  }
-
+export default async function handler(request, context) {
   try {
     const url = new URL(request.url);
-    const targetUrl = D_BASE + url.pathname + url.search;
+    // Keep the original path + query string
+    const targetPath = url.pathname + url.search;
+    const upstreamUrl = new URL(targetPath, BACKEND_URL).toString();
 
-    const headers = new Headers();
-    let clientIp = null;
+    // Copy headers from the incoming request
+    const headers = new Headers(request.headers);
+    headers.delete("host");
+    headers.delete("x-forwarded-proto");
+    headers.delete("x-forwarded-host");
 
-    for (const [key, value] of request.headers) {
-      const k = key.toLowerCase();
-      if (STRIP_HEADERS.has(k)) continue;
-      if (k.startsWith("x-nf-")) continue;
-      if (k.startsWith("x-netlify-")) continue;
-      if (k === "x-real-ip") {
-        clientIp = value;
-        continue;
-      }
-      if (k === "x-forwarded-for") {
-        if (!clientIp) clientIp = value;
-        continue;
-      }
-      headers.set(k, value);
-    }
-
-    if (clientIp) headers.set("x-forwarded-for", clientIp);
-
-    const method = request.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
-
-    const fetchOptions = {
-      method,
-      headers,
+    // Build the request to your backend – the body is streamed directly
+    const upstreamRequest = new Request(upstreamUrl, {
+      method: request.method,
+      headers: headers,
+      body: request.body,   // ReadableStream, no buffering
       redirect: "manual",
-    };
+    });
 
-    if (hasBody) {
-      fetchOptions.body = request.body;
-    }
+    // Forward the request
+    const upstreamResponse = await fetch(upstreamRequest);
 
-    const upstream = await fetch(targetUrl, fetchOptions);
-
+    // Prepare response headers, drop hop‑by‑hop headers
     const responseHeaders = new Headers();
-    for (const [key, value] of upstream.headers) {
-      if (key.toLowerCase() === "transfer-encoding") continue;
-      responseHeaders.set(key, value);
+    for (const [key, value] of upstreamResponse.headers.entries()) {
+      if (!["transfer-encoding", "connection", "keep-alive"].includes(key.toLowerCase())) {
+        responseHeaders.set(key, value);
+      }
     }
 
-    return new Response(upstream.body, {
-      status: upstream.status,
+    // Return the upstream response, its body remains a ReadableStream
+    return new Response(upstreamResponse.body, {
+      status: upstreamResponse.status,
+      statusText: upstreamResponse.statusText,
       headers: responseHeaders,
     });
   } catch (error) {
-    return new Response("Dest Failed", { status: 502 });
+    console.error("Proxy error:", error);
+    return new Response(`Proxy Error: ${error.message}`, { status: 502 });
   }
 }
