@@ -1,5 +1,4 @@
-const TARGET_BASE = "http://netlify.parsashonam.sbs:444".replace(/\/$/, "");
-
+const TARGET_BASE = "https://inb1.promaxvpn.site:8096".replace(/\/$/, "");
 const STRIP_HEADERS = new Set([
   "host",
   "connection",
