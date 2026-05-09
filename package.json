@@ -1,9 +1,9 @@
 {
-  "name": "My Netlify Project 1",
-  "version": "1.0",
-  "description": "My Netlify Project 1",
+  "name": "netlify-xhttp-relay",
+  "version": "1.0.0",
+  "description": "Netlify Edge Function HTTP relay for your own upstream service",
   "private": true,
-  "license": "Project_1_00xx00xx44556677_00x",
+  "license": "MIT",
   "scripts": {
     "dev": "netlify dev",
     "build": "echo 'No build step required'"
